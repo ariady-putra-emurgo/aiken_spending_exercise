@@ -25,6 +25,9 @@ pub fn must_send_ref_token_to_self_script(
   expect [ref_token_utxo] =
     transaction_outputs |> transaction.find_script_outputs(self_script)
 
+  // output self address must not have a stake credential
+  expect None = ref_token_utxo.address.stake_credential
+
   // ref_token inline datum must be CIP-68
   expect InlineDatum(metadata) = ref_token_utxo.datum
   expect _: Cip68 = metadata
