@@ -61,7 +61,7 @@ export default function Admin(props: { onDeposit: Action; onWithdraw: Action }) 
   function WithdrawButton() {
     const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
-    const [validatorAddress, setValidatorAddress] = useState(""); // addr_...
+    const [senderAddress, setSenderAddress] = useState(""); // addr_...
 
     return (
       <>
@@ -75,11 +75,11 @@ export default function Admin(props: { onDeposit: Action; onWithdraw: Action }) 
               <>
                 <ModalHeader className="flex flex-col gap-1">Withdraw</ModalHeader>
                 <ModalBody>
-                  <Input label="Contract Address" placeholder="addr_..." variant="bordered" onValueChange={setValidatorAddress} />
+                  <Input label="Sender Address" placeholder="addr_..." variant="bordered" onValueChange={setSenderAddress} />
                 </ModalBody>
                 <ModalFooter>
                   <Button
-                    onClick={() => onWithdraw(validatorAddress).then(onClose)}
+                    onClick={() => onWithdraw(senderAddress).then(onClose)}
                     className="bg-gradient-to-tr from-pink-500 to-yellow-500 text-white shadow-lg"
                     radius="full"
                   >

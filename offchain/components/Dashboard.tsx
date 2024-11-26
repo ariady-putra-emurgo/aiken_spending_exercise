@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { Accordion, AccordionItem } from "@nextui-org/accordion";
 
 import { ActionGroup } from "@/types/action";
@@ -21,8 +23,10 @@ import {
   SpendingValidator,
   toUnit,
   TxSignBuilder,
+  Unit,
   validatorToAddress,
 } from "@lucid-evolution/lucid";
+import { network, provider } from "@/config/lucid";
 
 const Script = {
   Admin: applyDoubleCborEncoding(
@@ -42,6 +46,10 @@ export default function Dashboard(props: {
 }) {
   const { lucid, address, setActionResult, onError } = props;
 
+  type Oref = Constr<string | bigint>;
+  type Cip68data = Record<string, Unit | Oref>;
+  const [cip68data, setCip68data] = useState<Cip68data>({});
+
   async function submitTx(tx: TxSignBuilder) {
     const txSigned = await tx.sign.withWallet().complete();
     const txHash = await txSigned.submit();
@@ -57,12 +65,12 @@ export default function Dashboard(props: {
 
           const spendingScript = applyParamsToScript(Script.Admin, [pkh]);
           const spendingValidator: SpendingValidator = { type: "PlutusV3", script: spendingScript };
-          const validatorAddress = validatorToAddress(lucid.config().network, spendingValidator);
+          const validatorAddress = validatorToAddress(network, spendingValidator);
 
           const beneficiary = `${getAddressDetails(beneficiaryAddress).paymentCredential?.hash}`;
           const datum = Data.to(beneficiary);
 
-          const tx = await lucid.newTx().pay.ToContract(validatorAddress, { kind: "inline", value: datum }, { lovelace }, spendingValidator).complete();
+          const tx = await lucid.newTx().pay.ToContract(validatorAddress, { kind: "inline", value: datum }, { lovelace }).complete({ localUPLCEval: false });
 
           submitTx(tx).then(setActionResult).catch(onError);
         } catch (error) {
@@ -70,17 +78,27 @@ export default function Dashboard(props: {
         }
       },
 
-      withdraw: async (validatorAddress: Address) => {
+      withdraw: async (senderAddress: Address) => {
         try {
-          const pkh = paymentCredentialOf(address).hash;
+          const senderPKH = paymentCredentialOf(senderAddress).hash;
 
-          const utxos = (await lucid.utxosAt(validatorAddress)).filter(({ datum }) => datum && `${Data.from(datum, Data.Bytes())}` === pkh);
-          const spendingValidator = utxos[0].scriptRef;
-          if (!spendingValidator) throw "Missing Reference Script";
+          const spendingScript = applyParamsToScript(Script.Admin, [senderPKH]);
+          const spendingValidator: SpendingValidator = { type: "PlutusV3", script: spendingScript };
+          const validatorAddress = validatorToAddress(network, spendingValidator);
+
+          const pkh = paymentCredentialOf(address).hash;
+          const utxos = (await lucid.utxosAt(validatorAddress)).filter(
+            ({ datum, scriptRef }) => !scriptRef && datum && `${Data.from(datum, Data.Bytes())}` === pkh
+          );
 
           const redeemer = Data.void();
 
-          const tx = await lucid.newTx().collectFrom(utxos, redeemer).attach.SpendingValidator(spendingValidator).addSigner(address).complete();
+          const tx = await lucid
+            .newTx()
+            .collectFrom(utxos, redeemer)
+            .attach.SpendingValidator(spendingValidator)
+            .addSigner(address)
+            .complete({ localUPLCEval: false });
 
           submitTx(tx).then(setActionResult).catch(onError);
         } catch (error) {
@@ -92,7 +110,7 @@ export default function Dashboard(props: {
     Cip68: {
       mint: async (nft: { name: string; image: string }) => {
         try {
-          if (nft.name.length > 64) throw "NFT Name is too long!";
+          if (nft.name.length > 32) throw "NFT Name is too long!";
           if (nft.image.length > 64) throw "NFT Image URL is too long!";
 
           const metadata = Data.fromJson(nft);
@@ -113,7 +131,7 @@ export default function Dashboard(props: {
           const cip68script = applyParamsToScript(Script.Cip68, [oRef]);
 
           const spendingValidator: SpendingValidator = { type: "PlutusV3", script: cip68script };
-          const validatorAddress = validatorToAddress(lucid.config().network, spendingValidator);
+          const validatorAddress = validatorToAddress(network, spendingValidator);
 
           const mintingPolicy: MintingPolicy = { type: "PlutusV3", script: cip68script };
           const policyID = mintingPolicyToId(mintingPolicy);
@@ -122,9 +140,6 @@ export default function Dashboard(props: {
 
           const refUnit = toUnit(policyID, assetName, 100);
           const nftUnit = toUnit(policyID, assetName, 222);
-
-          localStorage.setItem("refUnit", refUnit);
-          localStorage.setItem("nftUnit", nftUnit);
 
           //#region Validate Minting
           const refTokenUTXOs = await lucid.utxosAtWithUnit(validatorAddress, refUnit);
@@ -147,12 +162,16 @@ export default function Dashboard(props: {
               { kind: "inline", value: datum },
               {
                 [refUnit]: 1n,
-              },
-              spendingValidator
+              }
             )
-            .complete();
+            .complete({ localUPLCEval: false });
 
-          submitTx(tx).then(setActionResult).catch(onError);
+          submitTx(tx)
+            .then((txHash) => {
+              setActionResult(txHash);
+              setCip68data({ oRef, refUnit, nftUnit });
+            })
+            .catch(onError);
         } catch (error) {
           onError(error);
         }
@@ -171,23 +190,20 @@ export default function Dashboard(props: {
           const datum = Data.to(cip68);
           const redeemer = RedeemerAction.Update;
 
-          const refUnit = localStorage.getItem("refUnit");
-          const nftUnit = localStorage.getItem("nftUnit");
+          const { oRef, refUnit, nftUnit } = cip68data;
+          if (!oRef || !refUnit || !nftUnit) throw "Found no CIP-68 data in the current session. Must mint first!";
 
-          if (!refUnit || !nftUnit) throw "Found no asset units in the current session's local storage. Must mint first!";
+          const refTokenUTxO = await provider.getUtxoByUnit(`${refUnit}`);
+          const usrTokenUTxO = await provider.getUtxoByUnit(`${nftUnit}`);
 
-          const refTokenUTxO = await lucid.config().provider.getUtxoByUnit(refUnit);
-          const usrTokenUTxO = await lucid.config().provider.getUtxoByUnit(nftUnit);
-
-          const cip68script = refTokenUTxO.scriptRef;
-          if (!cip68script) throw "Missing Reference Script";
+          const cip68script: MintingPolicy = { type: "PlutusV3", script: applyParamsToScript(Script.Cip68, [oRef]) };
 
           const tx = await lucid
             .newTx()
             .collectFrom([refTokenUTxO, usrTokenUTxO], redeemer)
             .attach.SpendingValidator(cip68script)
-            .pay.ToContract(refTokenUTxO.address, { kind: "inline", value: datum }, refTokenUTxO.assets, refTokenUTxO.scriptRef ?? undefined)
-            .complete();
+            .pay.ToContract(refTokenUTxO.address, { kind: "inline", value: datum }, refTokenUTxO.assets)
+            .complete({ localUPLCEval: false });
 
           submitTx(tx).then(setActionResult).catch(onError);
         } catch (error) {
@@ -199,16 +215,16 @@ export default function Dashboard(props: {
         try {
           const redeemer = RedeemerAction.Burn;
 
-          const refUnit = localStorage.getItem("refUnit");
-          const nftUnit = localStorage.getItem("nftUnit");
+          const { oRef, refUnit, nftUnit } = cip68data;
+          if (!oRef || !refUnit || !nftUnit) throw "Found no CIP-68 data in the current session. Must mint first!";
 
-          if (!refUnit || !nftUnit) throw "Found no asset units in the current session's local storage. Must mint first!";
+          const refUnitString = `${refUnit}`;
+          const nftUnitString = `${nftUnit}`;
 
-          const refTokenUTxO = await lucid.config().provider.getUtxoByUnit(refUnit);
-          const usrTokenUTxO = await lucid.config().provider.getUtxoByUnit(nftUnit);
+          const refTokenUTxO = await provider.getUtxoByUnit(refUnitString);
+          const usrTokenUTxO = await provider.getUtxoByUnit(nftUnitString);
 
-          const cip68script = refTokenUTxO.scriptRef;
-          if (!cip68script) throw "Missing Reference Script";
+          const cip68script: MintingPolicy = { type: "PlutusV3", script: applyParamsToScript(Script.Cip68, [oRef]) };
 
           const tx = await lucid
             .newTx()
@@ -216,13 +232,13 @@ export default function Dashboard(props: {
             .attach.SpendingValidator(cip68script)
             .mintAssets(
               {
-                [refUnit]: -1n,
-                [nftUnit]: -1n,
+                [refUnitString]: -1n,
+                [nftUnitString]: -1n,
               },
               redeemer
             )
             .attach.MintingPolicy(cip68script)
-            .complete();
+            .complete({ localUPLCEval: false });
 
           submitTx(tx).then(setActionResult).catch(onError);
         } catch (error) {
