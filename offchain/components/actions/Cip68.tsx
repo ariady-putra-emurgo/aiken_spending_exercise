@@ -32,7 +32,7 @@ export default function Cip68(props: { onMint: Action; onUpdate: Action; onBurn:
                 </ModalBody>
                 <ModalFooter>
                   <Button
-                    onClick={() => onMint({ name, image }).then(onClose)}
+                    onPress={() => onMint({ name, image }).then(onClose)}
                     className="bg-gradient-to-tr from-pink-500 to-yellow-500 text-white shadow-lg"
                     radius="full"
                   >
@@ -70,7 +70,7 @@ export default function Cip68(props: { onMint: Action; onUpdate: Action; onBurn:
                 </ModalBody>
                 <ModalFooter>
                   <Button
-                    onClick={() => onUpdate({ name, image }).then(onClose)}
+                    onPress={() => onUpdate({ name, image }).then(onClose)}
                     className="bg-gradient-to-tr from-pink-500 to-yellow-500 text-white shadow-lg"
                     radius="full"
                   >
@@ -89,7 +89,7 @@ export default function Cip68(props: { onMint: Action; onUpdate: Action; onBurn:
     <div className="flex flex-wrap gap-2 mb-2">
       <MintButton />
       <UpdateButton />
-      <Button onClick={onBurn} className="bg-gradient-to-tr from-pink-500 to-yellow-500 text-white shadow-lg" radius="full">
+      <Button onPress={onBurn} className="bg-gradient-to-tr from-pink-500 to-yellow-500 text-white shadow-lg" radius="full">
         Burn
       </Button>
     </div>

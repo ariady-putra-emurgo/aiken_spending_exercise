@@ -43,7 +43,7 @@ export default function Admin(props: { onDeposit: Action; onWithdraw: Action }) 
                 </ModalBody>
                 <ModalFooter>
                   <Button
-                    onClick={() => onDeposit({ lovelace, beneficiaryAddress }).then(onClose)}
+                    onPress={() => onDeposit({ lovelace, beneficiaryAddress }).then(onClose)}
                     className="bg-gradient-to-tr from-pink-500 to-yellow-500 text-white shadow-lg"
                     radius="full"
                   >
@@ -79,7 +79,7 @@ export default function Admin(props: { onDeposit: Action; onWithdraw: Action }) 
                 </ModalBody>
                 <ModalFooter>
                   <Button
-                    onClick={() => onWithdraw(senderAddress).then(onClose)}
+                    onPress={() => onWithdraw(senderAddress).then(onClose)}
                     className="bg-gradient-to-tr from-pink-500 to-yellow-500 text-white shadow-lg"
                     radius="full"
                   >
