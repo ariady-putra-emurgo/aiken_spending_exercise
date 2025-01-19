@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { Accordion, AccordionItem } from "@nextui-org/accordion";
+import { Accordion, AccordionItem } from "@heroui/accordion";
 
 import { ActionGroup } from "@/types/action";
 import Admin from "./actions/Admin";
